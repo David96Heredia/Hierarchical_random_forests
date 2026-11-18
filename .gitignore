@@ -1,18 +1,17 @@
-# R and package build artifacts
-.Rhistory
-.RData
-.Ruserdata
-*.Rproj.user/
-*.o
-*.obj
-*.dll
-*.so
-*.a
-build/
-MD5
+# Local R workspace and generated outputs
+/.RData
+/.Rhistory
+/.Ruserdata
+/.Rproj.user/
+/custom_lib/
+/results/
+/Rplots.pdf
 
-# Local tooling and generated files
-.DS_Store
-Thumbs.db
-*.tar.gz
-*.Rcheck/
+# Personal experiment scripts and their helper
+/pre_package_charge.R
+/support_functions.R
+/test.R
+/test_ad_hoc_models.R
+/test_ad_hoc_models2.R
+/test_energy.R
+/test_g_sobol.R

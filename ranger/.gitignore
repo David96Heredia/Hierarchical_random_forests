@@ -1,0 +1,18 @@
+# R and package build artifacts
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj.user/
+*.o
+*.obj
+*.dll
+*.so
+*.a
+build/
+MD5
+
+# Local tooling and generated files
+.DS_Store
+Thumbs.db
+*.tar.gz
+*.Rcheck/
