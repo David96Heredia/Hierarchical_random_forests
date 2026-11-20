@@ -24,10 +24,11 @@ fit <- ranger(
 )
 ```
 
-When a node contains more than one activation value, it splits on the
-activation variable until the values are separated. Once a node contains one
-activation value, only the predictors assigned to that value are eligible for
-splitting. Ordinary tree stopping rules apply to these predictor splits.
+When a node contains more than one activation value, the activation variable
+and predictors shared by all activation values in that node are eligible for
+splitting. Once a node contains one activation value, only the predictors
+assigned to that value are eligible. Ordinary tree stopping rules apply at
+every node, and activation splits can separate any subset of the levels.
 
 The activation variable must be categorical, must have no missing values, and
 must not also appear in a hierarchical predictor group. In hierarchical mode,

@@ -336,23 +336,29 @@ void Tree::createPossibleSplitVarSubset(std::vector<size_t>& result) {
 }
 
 /* HIERARCHICAL MODE:
-This forces the hierarchical split if there is an activation variable */
+Restrict candidate variables to split according to the activation levels present. */
+/*In summary: we look at all the observations in the node, collect all the levels,
+and collect the variable (IDs) of all the ones in common*/
+/* This happens in each node*/
 bool Tree::prepareHierarchicalSplit(size_t nodeID, std::vector<size_t>& possible_split_varIDs) {
-  hierarchical_activation_split = false; /* Default settings if no activation variable is specified */
+  /* Reset default configuration for the split*/
+  hierarchical_activation_split = false;
   min_node_size = default_min_node_size;
   min_bucket = default_min_bucket;
   max_depth = default_max_depth;
   if (activation_variable_id == std::numeric_limits<size_t>::max()) { /* No activation variable specified, so no hierarchical split is needed */
     return false;
   }
+  /*If there is an activation variable, it should be one of the predictors*/
   if (hierarchical_variable_groups == 0 || activation_variable_id >= data->getNumCols()) {
     throw std::runtime_error("Invalid hierarchical variable configuration.");
   }
 
   /* Extract the activation levels present in the sample in the current node */
   /* Recall: nodeID is the index of the current node,
-  sampleIDs orders the placements of the samples where they belong in the tree, taking into account the order of the nodes,
-  start_pos and end_pos are vectors that store the starting and ending positions of the samples in sampleIDs, respectively 
+  sampleIDs orders the placements of the samples where they belong in the tree, depending on the order of the nodes,
+  note: when there is bootstrap, sampleIDs get permuted at the beginning nodeID=0
+  start_pos and end_pos are vectors that store the starting and ending positions of the samples in sampleIDs in the current node
   */
   std::set<double> activation_values; /* Set ignores duplicates*/
   for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) { /* For each observation in the current node */
@@ -363,49 +369,53 @@ bool Tree::prepareHierarchicalSplit(size_t nodeID, std::vector<size_t>& possible
     activation_values.insert(value); /* Collects such activation levels */
   }
 
-  if (activation_values.size() > 1) {
-    possible_split_varIDs.assign(1, activation_variable_id); /* Assign the activation variable as the only possible split variable */
-    hierarchical_activation_split = true; 
-    min_node_size = &hierarchical_min_node_size; /* No growing restrictions*/
-    min_bucket = &hierarchical_min_bucket;
-    max_depth = 0;
-      /* In case that the algorithm does not find the optimal split, we force it to cut with respect to the first activation level*/
-    uint64_t fallback_split = 0;
-    for (auto value = std::next(activation_values.begin()); value != activation_values.end(); ++value) {
-      fallback_split |= (1ULL << (static_cast<size_t>(*value) - 1));
-    }
-    split_varIDs[nodeID] = activation_variable_id;
-    split_values[nodeID] = static_cast<double>(fallback_split);
-    return false; /* False indicates that the algorithm should continue as usual after this backup cut */
-  }
-
-  /* ATTENTION: From here we know that there is only one or zero activation levels */
   /* If no activation levels are found, no hierarchical split is possible */
   if (activation_values.empty()) {
-    return false; /* Once we finished splitting wrt the activation variable, we continue as usual */
-  }
-  size_t level = static_cast<size_t>(*activation_values.begin());
-  if (level > hierarchical_variable_groups->size()) {
-    throw std::runtime_error("No predictor group was supplied for an activation level.");
+    return false;
   }
 
-  /* When we are left with a single activation level, we extract the allowed variables for Ranger */
-  const std::vector<size_t>& allowed_variables = (*hierarchical_variable_groups)[level - 1]; /* Extract the allowed variables for the current level */
+  std::vector<size_t> allowed_variables;
+  bool first_level = true;
+  for (double activation_value : activation_values) { /* For each activation level*/
+    size_t level = static_cast<size_t>(activation_value);
+    if (level > hierarchical_variable_groups->size()) {
+      throw std::runtime_error("No predictor group was supplied for an activation level.");
+    }
+
+    const std::vector<size_t>& group = (*hierarchical_variable_groups)[level - 1]; /*We look at the groups of variables in this level*/
+    if (first_level) {
+      allowed_variables = group; /*If this level is the first one, we stract its groups of variables first*/
+      first_level = false;
+    } else { /*Otherwise, if it is not the first one (so we look at another level)*/
+      std::vector<size_t> shared_variables; /*New allowed variables, after comparing allowed_variables with the ones in the current group*/
+      for (size_t variableID : allowed_variables) { /*For each allowed variable,*/
+        if (std::find(group.begin(), group.end(), variableID) != group.end()) { /*check if it belongs to the current group,*/
+          shared_variables.push_back(variableID); /*ff so, it is still considered as such*/
+        }
+      }
+      allowed_variables.swap(shared_variables); /*Update the vector*/
+    }
+  }
+
+  /*If there are still activation levels, Z is also considered as a variable to split*/
+  if (activation_values.size() > 1) {
+    allowed_variables.push_back(activation_variable_id);
+  }
+
   std::vector<size_t> allowed;
   allowed.reserve(allowed_variables.size() * (importance_mode == IMP_GINI_CORRECTED ? 2 : 1));
-  for (size_t variableID : allowed_variables) { /* For each allowed variable */
+  for (size_t variableID : allowed_variables) {
     if (variableID >= data->getNumCols()) {
       throw std::runtime_error("Invalid predictor in hierarchical variable group.");
     }
-    allowed.push_back(variableID); /* Add the current variable to the list of allowed (potential) variables for spliting (for Ranger) */
+    allowed.push_back(variableID);
     if (importance_mode == IMP_GINI_CORRECTED) {
       allowed.push_back(variableID + data->getNumCols());
     }
   }
 
-  /* Ulterly decide which allowed variables are actually considered for splitting
-  deterministic variables are always considered, while the rest are sampled according to the mtry parameter and the split selection weights
-  */
+  /* Deterministic variables are always considered, while the remaining
+     candidates are sampled according to mtry and split-selection weights. */
   std::vector<size_t> mandatory;
   std::vector<size_t> candidates;
   std::vector<double> candidate_weights;

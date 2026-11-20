@@ -1,27 +1,31 @@
 library(ranger)
 context("ranger_hierarchical")
 
-test_that("activation splits ignore ordinary tree limits", {
+test_that("mixed activation nodes can split on shared predictors", {
   set.seed(10)
   n <- 60
   dat <- data.frame(
     Z = factor(rep(c("A", "B"), each = n / 2)),
+    x = rnorm(n),
     xA = rnorm(n),
-    xB = rnorm(n),
-    y = rnorm(n)
+    xB = rnorm(n)
   )
+  dat$y <- dat$x
 
   rf <- ranger(
     y ~ ., data = dat, num.trees = 5, replace = FALSE, sample.fraction = 1,
-    min.node.size = n, min.bucket = n, max.depth = 1,
+    mtry = 2,
     activation.var = "Z",
-    hierarchical.variable.groups = list(A = "xA", B = "xB"),
+    hierarchical.variable.groups = list(A = c("x", "xA"), B = c("x", "xB")),
     respect.unordered.factors = "partition",
     verbose = FALSE
   )
 
   activation.id <- match("Z", rf$forest$independent.variable.names) - 1L
-  expect_true(all(vapply(rf$forest$split.varIDs, `[`, numeric(1), 1) == activation.id))
+  shared.id <- match("x", rf$forest$independent.variable.names) - 1L
+  root.ids <- vapply(rf$forest$split.varIDs, `[`, numeric(1), 1)
+  expect_true(all(root.ids %in% c(activation.id, shared.id)))
+  expect_true(any(root.ids == shared.id))
 })
 
 test_that("only branch-assigned variables are eligible after activation", {
@@ -74,25 +78,23 @@ test_that("activation partitions are selected by response rather than factor ord
   }
 })
 
-test_that("activation states still split when survival outcomes are identical", {
+test_that("ordinary stopping rules apply at mixed activation nodes", {
   n <- 30
   dat <- data.frame(
-    Z = factor(rep(c("A", "B", "C"), each = n / 3)),
-    time = rep(1, n),
-    status = rep(1, n),
-    x = rnorm(n)
+    Z = factor(rep(c("A", "B"), each = n / 2)),
+    x = rnorm(n),
+    y = rnorm(n)
   )
 
   rf <- ranger(
-    survival::Surv(time, status) ~ ., data = dat, num.trees = 1,
+    y ~ ., data = dat, num.trees = 1,
     min.node.size = n, min.bucket = n, max.depth = 1,
     activation.var = "Z",
-    hierarchical.variable.groups = list(A = "x", B = "x", C = "x"),
+    hierarchical.variable.groups = list(A = "x", B = "x"),
     verbose = FALSE
   )
 
-  expect_equal(length(rf$forest$split.varIDs[[1]]), 5)
-  expect_equal(rf$forest$split.varIDs[[1]][1], match("Z", rf$forest$independent.variable.names) - 1L)
+  expect_length(rf$forest$split.varIDs[[1]], 1)
 })
 
 test_that("hierarchical mode validates activation groups and prediction values", {

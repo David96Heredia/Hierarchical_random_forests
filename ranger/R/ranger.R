@@ -90,9 +90,8 @@
 ##' For prediction, this direction is saved as the "default" direction. If a missing occurs in prediction at a node where there is no default direction, it goes left.
 ##'
 ##' Hierarchical models can be requested with \code{activation.var} and \code{hierarchical.variable.groups}.
-##' The activation variable must be categorical and have no missing values. Nodes containing multiple activation values are split on the activation variable alone, regardless of \code{min.node.size}, \code{min.bucket}, or \code{max.depth}, until each node contains only one value.
-##' After activation values are separated, only the predictors assigned to that value are eligible for splitting, and the usual tree stopping rules apply. Forced activation splits can therefore create nodes smaller than \code{min.bucket}.
-##' Impurity importance and \code{node.stats} are not available in hierarchical mode because activation splits are forced rather than selected by the splitting criterion.
+##' The activation variable must be categorical and have no missing values. At a node containing multiple activation values, the activation variable and predictors shared by all those values are eligible for splitting. Once a node contains one activation value, only the predictors assigned to that value are eligible. The usual tree stopping rules apply at every node.
+##' Activation splits use the standard response-based split criterion and can separate any subset of the activation levels. Impurity importance and \code{node.stats} are available in hierarchical mode.
 ##'
 ##' For a large number of variables and data frames as input data the formula interface can be slow or impossible  to use.
 ##' Alternatively \code{dependent.variable.name} (and \code{status.variable.name} for survival) or \code{x} and \code{y} can be used.
@@ -388,12 +387,6 @@ ranger <- function(formula = NULL, data = NULL, num.trees = 500, mtry = NULL,
       if (activation.var %in% variables || any(variables %in% c(dependent.variable.name, status.variable.name))) {
         stop("Error: Hierarchical groups must contain predictors other than activation, response, or status variables.")
       }
-    }
-    if (!is.null(importance) && importance %in% c("impurity", "impurity_corrected", "impurity_unbiased")) {
-      stop("Error: Impurity importance is not available in hierarchical mode. Use permutation importance instead.")
-    }
-    if (isTRUE(node.stats)) {
-      stop("Error: node.stats is not available in hierarchical mode because activation splits are forced.")
     }
   } else if (!is.null(hierarchical.variable.groups)) {
     stop("Error: hierarchical.variable.groups requires activation.var.")
